@@ -9,17 +9,16 @@
 #include <08_TerminalNumber.mqh>
 #include <096_ReadMarketTypeFromCSV.mqh>
 #include <10_isNewBar.mqh>
-#include <12_ReadPredictionFromAI.mqh>
 #include <14_ReadPriceChangePredictionFromAI.mqh>
 #include <15_ReadPriceChangeTriggerFromAI.mqh>
 #include <16_LogMarketType.mqh>
 #include <17_CheckIfMarketTypePolicyIsOn.mqh>
 
 #property copyright "Copyright 2015, Black Algo Technologies Pte Ltd"
-#property copyright "Copyright 2018, Vladimir Zhbanko"
+#property copyright "Copyright 2019, Vladimir Zhbanko"
 #property link      "lucas@blackalgotechnologies.com"
 #property link      "https://vladdsm.github.io/myblog_attempt/"
-#property version   "1.001"  
+#property version   "1.003"  
 #property strict
 /* 
 
@@ -43,113 +42,123 @@ Falcon F2:
 # C. Only one order can be opened at the time
 # Trade Exit is triggered when:
 # A. Time of the order is reached fixed value e.g 1125 min
+
+# v 1.002
+Added option CloseOnFriday
+- closing all positions 1hr before events
+- inhibit opening of new positions
+# v 1.003
+Changed default options
+Removed direction mechanism
+
+
 */
 
 //+------------------------------------------------------------------+
 //| Setup                                               
 //+------------------------------------------------------------------+
-extern string  Header15="----------EA General Settings-----------";
-extern int     MagicNumber           = 8139201;
-extern int     TerminalType          = 1;         //0 mean slave, 1 mean master
-extern bool    R_Management          = true;      //R_Management true will enable Decision Support Centre (using R)
-extern int     Slippage              = 3; // In Pips
-extern bool    IsECNbroker           = false; // Is your broker an ECN
-extern bool    OnJournaling          = true; // Add EA updates in the Journal Tab
-extern bool    EnableDashboard       = True; // Turn on Dashboard
+extern string  Header1="----------EA General Settings-----------";
+extern int     MagicNumber                      = 8139201;
+extern int     TerminalType                     = 1;         //0 mean slave, 1 mean master
+extern bool    R_Management                     = true;      //R_Management true will enable Decision Support Centre (using R)
+extern int     Slippage                         = 3; // In Pips
+extern bool    IsECNbroker                      = false; // Is your broker an ECN
+extern bool    OnJournaling                     = false; // Add EA updates in the Journal Tab
+extern bool    EnableDashboard                  = True; // Turn on Dashboard
 
-extern string  Header1="----------Trading Rules Variables -----------";
-extern string  RobotBehavior          = "longterm"; //"scalper", "daily", "longterm"
-extern bool    usePredictedSL         = True;
-extern bool    usePredictedTP         = True;
-extern int     TimeMaxHoldM1          = 75; //max order close time in minutes
-extern int     TimeMaxHoldM15         = 1125; //max order close time in minutes
-extern int     TimeMaxHoldM60         = 6000; //max order close time in minutes
-extern int     entryTriggerM1         = 20;   //trade will start when predicted value will exceed this threshold
-extern int     entryTriggerM15        = 50;   //trade will start when predicted value will exceed this threshold
-extern int     entryTriggerM60        = 100;  //trade will start when predicted value will exceed this threshold
-extern double  stopLossFactorM1       = 2;    //SL factor from 0.75 up to 2 multiplied by predicted TP
-extern double  stopLossFactorM15      = 1; //SL factor from 0.75 up to 2 multiplied by predicted TP
-extern double  stopLossFactorM60      = 1; //SL factor from 0.75 up to 2 multiplied by predicted TP
-extern double  takeProfFactorM1       = 1;    //TP factor from 0.25 to 1 multiplied by predicted TP
-extern double  takeProfFactorM15      = 1;    //TP factor from 0.25 to 1 multiplied by predicted TP
-extern double  takeProfFactorM60      = 1;    //TP factor from 0.25 to 1 multiplied by predicted TP
-extern int     predictor_periodM1     = 1;    //predictor period in minutes
-extern int     predictor_periodM15    = 15;   //predictor period in minutes
-extern int     predictor_periodH1     = 60;   //predictor period in minutes
+extern string  Header2="----------Trading Rules Variables -----------";
+extern string  RobotBehavior                    = "daily"; //"scalper", "daily", "longterm"
+extern bool    usePredictedSL                   = True;
+extern bool    usePredictedTP                   = True;
+extern int     TimeMaxHoldM1                    = 75; //max order close time in minutes
+extern int     TimeMaxHoldM15                   = 1125; //max order close time in minutes
+extern int     TimeMaxHoldM60                   = 4500; //max order close time in minutes
+extern int     entryTriggerM1                   = 20;   //trade will start when predicted value will exceed this threshold
+extern int     entryTriggerM15                  = 50;   //trade will start when predicted value will exceed this threshold
+extern int     entryTriggerM60                  = 100;  //trade will start when predicted value will exceed this threshold
+extern double  stopLossFactorM1                 = 2;    //SL factor from 0.75 up to 2 multiplied by predicted TP
+extern double  stopLossFactorM15                = 0.8; //SL factor from 0.75 up to 2 multiplied by predicted TP
+extern double  stopLossFactorM60                = 0.8; //SL factor from 0.75 up to 2 multiplied by predicted TP
+extern double  takeProfFactorM1                 = 1;    //TP factor from 0.25 to 1 multiplied by predicted TP
+extern double  takeProfFactorM15                = 1;    //TP factor from 0.25 to 1 multiplied by predicted TP
+extern double  takeProfFactorM60                = 1;    //TP factor from 0.25 to 1 multiplied by predicted TP
+extern int     predictor_periodM1               = 1;    //predictor period in minutes
+extern int     predictor_periodM15              = 15;   //predictor period in minutes
+extern int     predictor_periodH1               = 60;   //predictor period in minutes
+extern bool    closeAllOnFridays                = True; //close all orders on Friday 1hr before market closure
+extern bool    use_market_type                  = True; //use market type trading policy
 
-extern string  Header2="----------Position Sizing Settings-----------";
-extern string  Lot_explanation="If IsSizingOn = true, Lots variable will be ignored";
-extern double  Lots=0.01;
-extern bool    IsSizingOn=False;
-extern double  Risk=1; // Risk per trade (in percentage)
+extern string  Header3="----------Position Sizing Settings-----------";
+extern string  Lot_explanation                  = "If IsSizingOn = true, Lots variable will be ignored";
+extern double  Lots                             = 0.01;
+extern bool    IsSizingOn                       = False;
+extern double  Risk                             = 1; // Risk per trade (in percentage)
+extern int     MaxPositionsAllowed              = 1;
 
-extern string  Header3="----------TP & SL Settings-----------";
+extern string  Header4="----------TP & SL Settings-----------";
 
-extern bool    UseFixedStopLoss=True; // If this is false and IsSizingOn = True, sizing algo will not be able to calculate correct lot size. 
-extern double  FixedStopLoss=0; // Hard Stop in Pips. Will be overridden if vol-based SL is true 
-extern bool    IsVolatilityStopOn=True;
-extern double  VolBasedSLMultiplier=3; // Stop Loss Amount in units of Volatility
+extern bool    UseFixedStopLoss                 = True; // If this is false and IsSizingOn = True, sizing algo will not be able to calculate correct lot size. 
+extern double  FixedStopLoss                    = 0; // Hard Stop in Pips. Will be overridden if vol-based SL is true 
+extern bool    IsVolatilityStopOn               = True;
+extern double  VolBasedSLMultiplier             = 4; // Stop Loss Amount in units of Volatility
 
-extern bool    UseFixedTakeProfit=True;
-extern double  FixedTakeProfit=0; // Hard Take Profit in Pips. Will be overridden if vol-based TP is true 
-extern bool    IsVolatilityTakeProfitOn=True;
-extern double  VolBasedTPMultiplier=4; // Take Profit Amount in units of Volatility
+extern bool    UseFixedTakeProfit               = True;
+extern double  FixedTakeProfit                  = 0; // Hard Take Profit in Pips. Will be overridden if vol-based TP is true 
+extern bool    IsVolatilityTakeProfitOn         = True;
+extern double  VolBasedTPMultiplier             = 6; // Take Profit Amount in units of Volatility
 
-extern string  Header4="----------Hidden TP & SL Settings-----------";
+extern string  Header5="----------Hidden TP & SL Settings-----------";
 
-extern bool    UseHiddenStopLoss=False;
-extern double  FixedStopLoss_Hidden=0; // In Pips. Will be overridden if hidden vol-based SL is true 
-extern bool    IsVolatilityStopLossOn_Hidden=False;
-extern double  VolBasedSLMultiplier_Hidden=0; // Stop Loss Amount in units of Volatility
+extern bool    UseHiddenStopLoss                = False;
+extern double  FixedStopLoss_Hidden             = 0; // In Pips. Will be overridden if hidden vol-based SL is true 
+extern bool    IsVolatilityStopLossOn_Hidden    = False;
+extern double  VolBasedSLMultiplier_Hidden      = 0; // Stop Loss Amount in units of Volatility
 
-extern bool    UseHiddenTakeProfit=False;
-extern double  FixedTakeProfit_Hidden=0; // In Pips. Will be overridden if hidden vol-based TP is true 
-extern bool    IsVolatilityTakeProfitOn_Hidden=False;
-extern double  VolBasedTPMultiplier_Hidden=0; // Take Profit Amount in units of Volatility
+extern bool    UseHiddenTakeProfit              = False;
+extern double  FixedTakeProfit_Hidden           = 0; // In Pips. Will be overridden if hidden vol-based TP is true 
+extern bool    IsVolatilityTakeProfitOn_Hidden  = False;
+extern double  VolBasedTPMultiplier_Hidden      = 0; // Take Profit Amount in units of Volatility
 
-extern string  Header5="----------Breakeven Stops Settings-----------";
-extern bool    UseBreakevenStops=False;
-extern double  BreakevenBuffer=0; // In pips
+extern string  Header6="----------Breakeven Stops Settings-----------";
+extern bool    UseBreakevenStops                = False;
+extern double  BreakevenBuffer                  = 0; // In pips
 
-extern string  Header6="----------Hidden Breakeven Stops Settings-----------";
-extern bool    UseHiddenBreakevenStops=False;
-extern double  BreakevenBuffer_Hidden=0; // In pips
+extern string  Header7="----------Hidden Breakeven Stops Settings-----------";
+extern bool    UseHiddenBreakevenStops          = False;
+extern double  BreakevenBuffer_Hidden           = 0; // In pips
 
-extern string  Header7="----------Trailing Stops Settings-----------";
-extern bool    UseTrailingStops=False;
-extern double  TrailingStopDistance=0; // In pips
-extern double  TrailingStopBuffer=0; // In pips
+extern string  Header8="----------Trailing Stops Settings-----------";
+extern bool    UseTrailingStops                 = False;
+extern double  TrailingStopDistance             = 0; // In pips
+extern double  TrailingStopBuffer               = 0; // In pips
 
-extern string  Header8="----------Hidden Trailing Stops Settings-----------";
-extern bool    UseHiddenTrailingStops=False;
-extern double  TrailingStopDistance_Hidden=0; // In pips
-extern double  TrailingStopBuffer_Hidden=0; // In pips
+extern string  Header9="----------Hidden Trailing Stops Settings-----------";
+extern bool    UseHiddenTrailingStops           = False;
+extern double  TrailingStopDistance_Hidden      = 0; // In pips
+extern double  TrailingStopBuffer_Hidden        = 0; // In pips
 
-extern string  Header9="----------Volatility Trailing Stops Settings-----------";
-extern bool    UseVolTrailingStops=False;
-extern double  VolTrailingDistMultiplier=0; // In units of ATR
-extern double  VolTrailingBuffMultiplier=0; // In units of ATR
+extern string  Header10="----------Volatility Trailing Stops Settings-----------";
+extern bool    UseVolTrailingStops              = False;
+extern double  VolTrailingDistMultiplier        = 0; // In units of ATR
+extern double  VolTrailingBuffMultiplier        = 0; // In units of ATR
 
-extern string  Header10="----------Hidden Volatility Trailing Stops Settings-----------";
-extern bool    UseHiddenVolTrailing=False;
-extern double  VolTrailingDistMultiplier_Hidden=0; // In units of ATR
-extern double  VolTrailingBuffMultiplier_Hidden=0; // In units of ATR
+extern string  Header11="----------Hidden Volatility Trailing Stops Settings-----------";
+extern bool    UseHiddenVolTrailing             = False;
+extern double  VolTrailingDistMultiplier_Hidden = 0; // In units of ATR
+extern double  VolTrailingBuffMultiplier_Hidden = 0; // In units of ATR
 
-extern string  Header11="----------Volatility Measurement Settings-----------";
-extern int     atr_period=14;
-
-extern string  Header12="----------Max Orders-----------";
-extern int     MaxPositionsAllowed=1;
+extern string  Header12="----------Volatility Measurement Settings-----------";
+extern int     atr_period                       = 14;
 
 extern string  Header13="----------Set Max Loss Limit-----------";
-extern bool    IsLossLimitActivated=False;
-extern double  LossLimitPercent=50;
+extern bool    IsLossLimitActivated             = False;
+extern double  LossLimitPercent                 = 50;
 
 extern string  Header14="----------Set Max Volatility Limit-----------";
-extern bool    IsVolLimitActivated=False;
-extern double  VolatilityMultiplier=3; // In units of ATR
-extern int     ATRTimeframe=60; // In minutes
-extern int     ATRPeriod=14;
+extern bool    IsVolLimitActivated              = False;
+extern double  VolatilityMultiplier             = 3; // In units of ATR
+extern int     ATRTimeframe                     = 60; // In minutes
+extern int     ATRPeriod                        = 14;
 
 string  InternalHeader1="----------Errors Handling Settings-----------";
 int     RetryInterval=100; // Pause Time before next retry (in milliseconds)
@@ -184,10 +193,10 @@ bool FlagBuy, FlagSell;       //boolean flags to limit direction of trades
 datetime ReferenceTime;       //used for order history
 int     MyMarketType;         //used to recieve market status from AI
 //used to recieve prediction from AI 
-int     AIPredictionM1, AIPredictionM15, AIPredictionH1;  
 int TimeMaxHold;       
 double    AIPriceChangePredictionM1, AIPriceChangePredictionM15, AIPriceChangePredictionH1;
 double    AIPriceTriggerPredictionM1, AIPriceTriggerPredictionM15, AIPriceTriggerPredictionH1;
+bool isFridayActive = false;
 
 //+------------------------------------------------------------------+
 //| End of Setup                                          
@@ -269,48 +278,46 @@ int start()
          OrderProfitToCSV(T_Num(MagicNumber));                        //write previous orders profit results for auto analysis in R
          MyMarketType = ReadMarketFromCSV(Symbol(), 15);            //read analytical output from the Decision Support System
          //get the Reinforcement Learning policy for specific Market Type
-         if(TerminalType == 0)
+         if(TerminalType == 0 && use_market_type == true)
            {
             isMarketTypePolicyON = CheckIfMarketTypePolicyIsOn(MagicNumber, MyMarketType);
-           }
+           } else
+               {
+                isMarketTypePolicyON = true;
+               }
          
          
          //predicted using M1 Timeframe
-         AIPredictionM1 = ReadPredictionFromAI(Symbol(),predictor_periodM1);            //read predicted direction for the next trade
          AIPriceChangePredictionM1 = ReadPriceChangePredictionFromAI(Symbol(),predictor_periodM1); //price change prediction
          
          //predicted using M15 Timeframe
-         AIPredictionM15 = ReadPredictionFromAI(Symbol(),predictor_periodM15);          //read predicted direction for the next trade
          AIPriceChangePredictionM15 = ReadPriceChangePredictionFromAI(Symbol(),predictor_periodM15); //price change prediction
            //derived trigger level
            AIPriceTriggerPredictionM15 = ReadPriceChangeTriggerFromAI(predictor_periodM15);
            if(AIPriceTriggerPredictionM15 > 10) entryTriggerM15 = (int)AIPriceTriggerPredictionM15;
              
          //predicted using H1 Timeframe
-         AIPredictionH1 = ReadPredictionFromAI(Symbol(),predictor_periodH1);            //read predicted direction for the next trade
          AIPriceChangePredictionH1 = ReadPriceChangePredictionFromAI(Symbol(),predictor_periodH1); //price change prediction
             //derived trigger level
            AIPriceTriggerPredictionH1 = ReadPriceChangeTriggerFromAI(predictor_periodH1);
            if(AIPriceTriggerPredictionH1 > 10) entryTriggerM60 = (int)AIPriceTriggerPredictionH1;
          
          //do not trade when something is wrong...
-         if(AIPredictionM1 == TRADE_NONE || AIPredictionM15 == TRADE_NONE || AIPredictionH1 == TRADE_NONE)
+         if(AIPriceChangePredictionM1 == -1 || AIPriceTriggerPredictionM15 == -1 || AIPriceTriggerPredictionH1 == -1)
            {
              FlagBuy = False;
              FlagSell= False;
            }
       
-         FlagBuy   = GetTradeFlagCondition(AIPredictionM1, AIPredictionM15, AIPredictionH1, //predicted direction from DSS
-                           AIPriceChangePredictionM1,AIPriceChangePredictionM15,AIPriceChangePredictionH1, //predicted change from DSS
-                           entryTriggerM1, entryTriggerM15, entryTriggerM60,//absolute value to enter trade
-                           RobotBehavior,      //desired robot behaviour "scalper", "daily", "longterm"
-                           "buy"); //which direction to check "buy" "sell"
+         FlagBuy   = GetTradeFlagCondition(AIPriceChangePredictionM1,AIPriceChangePredictionM15,AIPriceChangePredictionH1, //predicted change from DSS
+                                           entryTriggerM1, entryTriggerM15, entryTriggerM60,//absolute value to enter trade
+                                           RobotBehavior,      //desired robot behaviour "scalper", "daily", "longterm"
+                                           "buy"); //which direction to check "buy" "sell"
              
-         FlagSell = GetTradeFlagCondition(AIPredictionM1, AIPredictionM15, AIPredictionH1, //predicted direction from DSS
-                           AIPriceChangePredictionM1,AIPriceChangePredictionM15,AIPriceChangePredictionH1, //predicted change from DSS
-                           entryTriggerM1, entryTriggerM15, entryTriggerM60,//absolute value to enter trade
-                           RobotBehavior,      //desired robot behaviour "scalper", "daily", "longterm"
-                           "sell"); //which direction to check "buy" "sell"
+         FlagSell = GetTradeFlagCondition(AIPriceChangePredictionM1,AIPriceChangePredictionM15,AIPriceChangePredictionH1, //predicted change from DSS
+                                          entryTriggerM1, entryTriggerM15, entryTriggerM60,//absolute value to enter trade
+                                          RobotBehavior,      //desired robot behaviour "scalper", "daily", "longterm"
+                                          "sell"); //which direction to check "buy" "sell"
                            
          TimeMaxHold = GetTimeMaxHold(TimeMaxHoldM1, TimeMaxHoldM15, TimeMaxHoldM60,    //time to hold order from the parameters
                                       RobotBehavior);
@@ -334,6 +341,18 @@ int start()
    if(FlagSell) CrossTriggered1=2;
    
    //Exit variables:
+   if(closeAllOnFridays)
+     {
+      //check if it's Friday and 1 hr before market closure
+      if(Hour()== 22 && DayOfWeek()== 5)
+        {
+         isFridayActive = true;
+        } else
+            {
+             isFridayActive = false;
+            }
+        
+     }
     /* Using timer to close trades
     
     //1. Predicted to Buy --> close the sell trade but wait until the order minimum holding time is expired
@@ -395,12 +414,12 @@ int start()
 
    // TDL 2: Setting up Exit rules. Modify the ExitSignal() function to suit your needs.
 
-   if(CountPosOrders(MagicNumber,OP_BUY)>=1 && ExitSignalOnTimer(2, MagicNumber, TimeMaxHold)==2)
+   if(CountPosOrders(MagicNumber,OP_BUY)>=1 && (ExitSignalOnTimer(2, MagicNumber, TimeMaxHold)==2 || isFridayActive == true))
      { // Close Long Positions
       CloseOrderPosition(OP_BUY, OnJournaling, MagicNumber, Slippage, P, RetryInterval); 
 
      }
-   if(CountPosOrders(MagicNumber,OP_SELL)>=1 && ExitSignalOnTimer(1, MagicNumber, TimeMaxHold)==1)
+   if(CountPosOrders(MagicNumber,OP_SELL)>=1 && (ExitSignalOnTimer(1, MagicNumber, TimeMaxHold)==1 || isFridayActive == true))
      { // Close Short Positions
       CloseOrderPosition(OP_SELL, OnJournaling, MagicNumber, Slippage, P, RetryInterval);
      }
@@ -411,7 +430,7 @@ int start()
       if(IsVolLimitBreached(IsVolLimitActivated,VolatilityMultiplier,ATRTimeframe,ATRPeriod)==False)
          if(IsMaxPositionsReached(MaxPositionsAllowed,MagicNumber,OnJournaling)==False)
            {
-            if(TradeAllowed && isMarketTypePolicyON && FlagBuy && EntrySignal(CrossTriggered1)==1)
+            if(!isFridayActive && TradeAllowed && isMarketTypePolicyON && FlagBuy && EntrySignal(CrossTriggered1)==1)
               { // Open Long Positions
                OrderNumber=OpenPositionMarket(OP_BUY,GetLot(IsSizingOn,Lots,Risk,YenPairAdjustFactor,Stop,P),Stop,Take,MagicNumber,Slippage,OnJournaling,P,IsECNbroker,MaxRetriesPerTick,RetryInterval);
    
@@ -432,7 +451,7 @@ int start()
              
               }
    
-            if(TradeAllowed && isMarketTypePolicyON && FlagSell && EntrySignal(CrossTriggered1)==2)
+            if(!isFridayActive && TradeAllowed && isMarketTypePolicyON && FlagSell && EntrySignal(CrossTriggered1)==2)
               { // Open Short Positions
                OrderNumber=OpenPositionMarket(OP_SELL,GetLot(IsSizingOn,Lots,Risk,YenPairAdjustFactor,Stop,P),Stop,Take,MagicNumber,Slippage,OnJournaling,P,IsECNbroker,MaxRetriesPerTick,RetryInterval);
    
@@ -462,11 +481,11 @@ int start()
 //----
     //adding dashboard
     if(EnableDashboard==True) ShowDashboard("Magic Number", MagicNumber,
-                                            "Direction M1", AIPredictionM1,
+                                            "Direction M1", 1,
                                             "Change    M1", AIPriceChangePredictionM1,
-                                            "Direction M15", AIPredictionM15,
+                                            "Direction M15", 1,
                                             "Change    M15", AIPriceChangePredictionM15,
-                                            "Direction H1", AIPredictionH1,
+                                            "Direction H1", 1,
                                             "Change    H1", AIPriceChangePredictionH1); 
 
    return(0);
@@ -2367,8 +2386,7 @@ string GetErrorDescription(int error)
 //+------------------------------------------------------------------+
 //| GetTradeFlagCondition                                              
 //+------------------------------------------------------------------+
-bool GetTradeFlagCondition(int DirectionM1,int DirectionM15, int DirectionM60, //predicted direction from DSS
-                           double ExpectedMoveM1,double ExpectedMoveM15,double ExpectedMoveM60, //predicted change from DSS
+bool GetTradeFlagCondition(double ExpectedMoveM1,double ExpectedMoveM15,double ExpectedMoveM60, //predicted change from DSS
                            int EntryTradeTriggerM1, int EntryTradeTriggerM15, int EntryTradeTriggerM60,//absolute value to enter trade
                            string RobotType,      //desired robot behaviour "scalper", "daily", "longterm"
                            string DirectionCheck) //which direction to check "buy" "sell"
